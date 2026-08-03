@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>パーティクルストリップメーカー</title>
+<style>
+  :root{
+    --bg: #14151a;
+    --panel: #1c1e26;
+    --panel-2: #22242e;
+    --line: #33364199;
+    --text: #e8e9ee;
+    --text-dim: #9497a6;
+    --accent: #7dd3c0;
+    --accent-2: #f2b04f;
+    --danger: #e2687a;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% -10%, #22303055 0%, transparent 45%),
+      radial-gradient(circle at 100% 0%, #3a2a1a55 0%, transparent 40%),
+      var(--bg);
+    color:var(--text);
+    font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', system-ui, sans-serif;
+    min-height:100vh;
+    padding: 32px 20px 80px;
+  }
+  .wrap{max-width:900px;margin:0 auto;}
+
+  header{margin-bottom:28px;}
+  .eyebrow{
+    font-family: var(--mono);
+    font-size:11px;
+    letter-spacing:.18em;
+    color:var(--accent);
+    text-transform:uppercase;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .eyebrow::before{
+    content:"";
+    display:inline-block;
+    width:22px;height:2px;
+    background:var(--accent);
+  }
+  h1{
+    font-size: clamp(24px, 4vw, 32px);
+    margin: 10px 0 6px;
+    letter-spacing:-0.01em;
+    font-weight:700;
+  }
+  header p{
+    color:var(--text-dim);
+    font-size:14px;
+    margin:0;
+    line-height:1.6;
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:22px;
+    margin-bottom:18px;
+  }
+  .panel h2{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--text-dim);
+    margin:0 0 16px;
+    font-weight:600;
+  }
+
+  /* drop zone */
+  .drop{
+    border:1.5px dashed #4a4e5c;
+    border-radius:12px;
+    padding:36px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+    background: var(--panel-2);
+  }
+  .drop.drag{
+    border-color:var(--accent);
+    background:#1c2b28;
+  }
+  .drop .icon{
+    font-size:28px;
+    margin-bottom:10px;
+    opacity:.8;
+  }
+  .drop .main-txt{font-size:14px;color:var(--text);margin-bottom:4px;}
+  .drop .sub-txt{font-size:12px;color:var(--text-dim);}
+  .drop input{display:none;}
+  .filename{
+    margin-top:14px;
+    font-family:var(--mono);
+    font-size:12.5px;
+    color:var(--accent);
+    word-break:break-all;
+  }
+
+  /* controls */
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:18px;
+    align-items:flex-end;
+  }
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{
+    font-size:12px;
+    color:var(--text-dim);
+    font-family:var(--mono);
+  }
+  .field input[type=number]{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:8px;
+    padding:9px 12px;
+    font-size:14px;
+    width:120px;
+    font-family:var(--mono);
+  }
+  .field input[type=number]:focus{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+  button{
+    font-family:inherit;
+    font-size:13.5px;
+    font-weight:600;
+    border-radius:8px;
+    padding:10px 18px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    color:var(--text);
+    cursor:pointer;
+    transition: all .12s ease;
+  }
+  button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+  button:disabled{opacity:.35;cursor:not-allowed;}
+  button.primary{
+    background:var(--accent);
+    color:#0f1712;
+    border-color:var(--accent);
+  }
+  button.primary:hover:not(:disabled){
+    filter:brightness(1.08);
+    color:#0f1712;
+  }
+
+  /* status / estimate */
+  .estimate{
+    display:flex;
+    gap:24px;
+    flex-wrap:wrap;
+    font-family:var(--mono);
+    font-size:12.5px;
+    color:var(--text-dim);
+    margin-top:16px;
+    padding-top:16px;
+    border-top:1px solid var(--line);
+  }
+  .estimate b{color:var(--text);font-weight:600;}
+  .estimate .warn{color:var(--accent-2);}
+
+  progress{
+    width:100%;
+    height:6px;
+    -webkit-appearance:none;
+    appearance:none;
+    border:none;
+    border-radius:4px;
+    overflow:hidden;
+    margin-top:14px;
+  }
+  progress::-webkit-progress-bar{background:var(--panel-2);}
+  progress::-webkit-progress-value{background:var(--accent);}
+  progress::-moz-progress-bar{background:var(--accent);}
+
+  /* thumbnail grid */
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap:10px;
+    margin-top:4px;
+  }
+  .thumb{
+    position:relative;
+    border-radius:8px;
+    overflow:hidden;
+    border:1px solid var(--line);
+    background:#000;
+    aspect-ratio: 1 / 1;
+  }
+  .thumb img{
+    width:100%;height:100%;object-fit:contain;background:#000;
+    display:block;
+  }
+  .thumb .idx{
+    position:absolute;
+    top:4px;left:5px;
+    font-family:var(--mono);
+    font-size:10px;
+    color:#fff;
+    background:#0008;
+    padding:1px 5px;
+    border-radius:4px;
+  }
+  .thumb .rm{
+    position:absolute;
+    top:3px;right:3px;
+    width:20px;height:20px;
+    border-radius:50%;
+    background:#0009;
+    border:none;
+    color:#fff;
+    font-size:13px;
+    line-height:1;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+  }
+  .thumb .rm:hover{background:var(--danger);}
+  .thumb.excluded{opacity:.28;}
+  .thumb.excluded .rm{background:var(--accent);color:#0f1712;}
+  .thumb.excluded .rm:hover{filter:brightness(1.1);}
+
+  .empty-note{
+    color:var(--text-dim);
+    font-size:13px;
+    font-family:var(--mono);
+    padding:20px 0;
+    text-align:center;
+  }
+
+  footer{
+    text-align:center;
+    color:var(--text-dim);
+    font-size:11.5px;
+    margin-top:30px;
+    font-family:var(--mono);
+  }
+
+  .row-actions{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:16px;
+  }
+  .hint{font-size:12px;color:var(--text-dim);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Minecraft Add-On Tool</div>
+    <h1>パーティクルストリップメーカー</h1>
+    <p>動画から一定間隔でフレームを切り出し、縦1列に結合したPNGを書き出します。マイクラのパーティクルテクスチャ(アニメーション)にそのまま使えます。</p>
+  </header>
+
+  <div class="panel">
+    <h2>1. 動画を読み込む</h2>
+    <div class="drop" id="dropZone">
+      <div class="icon">🎞️</div>
+      <div class="main-txt">動画ファイルをドラッグ&ドロップ</div>
+      <div class="sub-txt">またはクリックして選択(mp4 / webm / mov 等)</div>
+      <input type="file" id="fileInput" accept="video/*">
+      <div class="filename" id="fileName"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="controlsPanel" style="display:none;">
+    <h2>2. 切り出し設定</h2>
+    <div class="controls">
+      <div class="field">
+        <label for="intervalInput">切り出し間隔(秒)</label>
+        <input type="number" id="intervalInput" value="0.5" min="0.01" step="0.01">
+      </div>
+      <div class="field">
+        <label for="startInput">開始位置(秒)</label>
+        <input type="number" id="startInput" value="0" min="0" step="0.01">
+      </div>
+      <button id="extractBtn" class="primary">フレームを切り出す</button>
+    </div>
+
+    <div class="estimate" id="estimate"></div>
+    <progress id="progressBar" value="0" max="1" style="display:none;"></progress>
+  </div>
+
+  <div class="panel" id="previewPanel" style="display:none;">
+    <div class="row-actions">
+      <h2 style="margin:0;">3. プレビュー(不要なフレームは✕で除外)</h2>
+      <span class="hint" id="previewSummary"></span>
+    </div>
+    <div class="grid" id="thumbGrid"></div>
+  </div>
+
+  <div class="panel" id="exportPanel" style="display:none;">
+    <h2>4. 書き出し</h2>
+    <div class="estimate" id="exportEstimate"></div>
+    <div style="margin-top:16px;">
+      <button id="exportBtn" class="primary">縦1列PNGをダウンロード</button>
+    </div>
+  </div>
+
+  <footer>すべての処理はブラウザ内で完結します。動画はサーバーに送信されません。</footer>
+</div>
+
+<video id="hiddenVideo" style="display:none;" preload="auto" muted playsinline></video>
+<canvas id="workCanvas" style="display:none;"></canvas>
+
+<script>
+(function(){
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileNameEl = document.getElementById('fileName');
+  const controlsPanel = document.getElementById('controlsPanel');
+  const intervalInput = document.getElementById('intervalInput');
+  const startInput = document.getElementById('startInput');
+  const extractBtn = document.getElementById('extractBtn');
+  const estimateEl = document.getElementById('estimate');
+  const progressBar = document.getElementById('progressBar');
+  const previewPanel = document.getElementById('previewPanel');
+  const previewSummary = document.getElementById('previewSummary');
+  const thumbGrid = document.getElementById('thumbGrid');
+  const exportPanel = document.getElementById('exportPanel');
+  const exportEstimate = document.getElementById('exportEstimate');
+  const exportBtn = document.getElementById('exportBtn');
+  const video = document.getElementById('hiddenVideo');
+  const canvas = document.getElementById('workCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let videoWidth = 0, videoHeight = 0, videoDuration = 0;
+  // frames: [{dataUrl, excluded}]
+  let frames = [];
+
+  function fmtBytes(n){
+    if(n < 1024) return n + ' B';
+    if(n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+    return (n/1024/1024).toFixed(2) + ' MB';
+  }
+
+  // ---- file loading ----
+  ['dragenter','dragover'].forEach(ev=>{
+    dropZone.addEventListener(ev, e=>{
+      e.preventDefault(); e.stopPropagation();
+      dropZone.classList.add('drag');
+    });
+  });
+  ['dragleave','drop'].forEach(ev=>{
+    dropZone.addEventListener(ev, e=>{
+      e.preventDefault(); e.stopPropagation();
+      dropZone.classList.remove('drag');
+    });
+  });
+  dropZone.addEventListener('drop', e=>{
+    const f = e.dataTransfer.files[0];
+    if(f) loadFile(f);
+  });
+  dropZone.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', e=>{
+    const f = e.target.files[0];
+    if(f) loadFile(f);
+  });
+
+  function loadFile(file){
+    if(!file.type.startsWith('video/')){
+      alert('動画ファイルを選択してください。');
+      return;
+    }
+    fileNameEl.textContent = file.name;
+    const url = URL.createObjectURL(file);
+    video.src = url;
+    video.onloadedmetadata = ()=>{
+      videoWidth = video.videoWidth;
+      videoHeight = video.videoHeight;
+      videoDuration = video.duration;
+      controlsPanel.style.display = 'block';
+      previewPanel.style.display = 'none';
+      exportPanel.style.display = 'none';
+      frames = [];
+      thumbGrid.innerHTML = '';
+      updateEstimate();
+    };
+  }
+
+  intervalInput.addEventListener('input', updateEstimate);
+  startInput.addEventListener('input', updateEstimate);
+
+  function computeTimestamps(){
+    const interval = Math.max(parseFloat(intervalInput.value) || 0.5, 0.01);
+    const start = Math.max(parseFloat(startInput.value) || 0, 0);
+    const stamps = [];
+    for(let t = start; t < videoDuration; t += interval){
+      stamps.push(t);
+    }
+    return {stamps, interval, start};
+  }
+
+  function updateEstimate(){
+    if(!videoDuration) return;
+    const {stamps} = computeTimestamps();
+    const count = stamps.length;
+    const outH = videoHeight * count;
+    let warn = '';
+    if(count > 128){
+      warn = ' <span class="warn">⚠ フレーム数が多いです。マイクラのパーティクルテクスチャとしては重くなる可能性があります。</span>';
+    } else if(count === 0){
+      warn = ' <span class="warn">⚠ 条件に合うフレームがありません。間隔・開始位置を見直してください。</span>';
+    }
+    estimateEl.innerHTML =
+      `動画: <b>${videoWidth}×${videoHeight}px</b> / 長さ <b>${videoDuration.toFixed(2)}s</b>` +
+      ` &nbsp;→&nbsp; 切り出し予定 <b>${count}枚</b>` +
+      ` &nbsp;→&nbsp; 出力サイズ予測 <b>${videoWidth}×${outH}px</b>${warn}`;
+  }
+
+  // ---- extraction ----
+  extractBtn.addEventListener('click', async ()=>{
+    const {stamps} = computeTimestamps();
+    if(stamps.length === 0){
+      alert('切り出せるフレームがありません。設定を見直してください。');
+      return;
+    }
+    extractBtn.disabled = true;
+    progressBar.style.display = 'block';
+    progressBar.max = stamps.length;
+    progressBar.value = 0;
+
+    canvas.width = videoWidth;
+    canvas.height = videoHeight;
+    frames = [];
+
+    for(let i=0; i<stamps.length; i++){
+      await seekTo(stamps[i]);
+      ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+      const dataUrl = canvas.toDataURL('image/png');
+      frames.push({dataUrl, excluded:false, time: stamps[i]});
+      progressBar.value = i+1;
+    }
+
+    progressBar.style.display = 'none';
+    extractBtn.disabled = false;
+    renderThumbs();
+    previewPanel.style.display = 'block';
+    exportPanel.style.display = 'block';
+    updateExportEstimate();
+  });
+
+  function seekTo(t){
+    return new Promise(resolve=>{
+      const onSeeked = ()=>{
+        video.removeEventListener('seeked', onSeeked);
+        resolve();
+      };
+      video.addEventListener('seeked', onSeeked);
+      video.currentTime = Math.min(t, videoDuration - 0.001);
+    });
+  }
+
+  // ---- preview / exclusion ----
+  function renderThumbs(){
+    thumbGrid.innerHTML = '';
+    frames.forEach((f, i)=>{
+      const div = document.createElement('div');
+      div.className = 'thumb' + (f.excluded ? ' excluded' : '');
+      div.innerHTML = `
+        <img src="${f.dataUrl}" alt="frame ${i}">
+        <span class="idx">${i+1}</span>
+        <button class="rm" title="除外/復元">${f.excluded ? '＋' : '✕'}</button>
+      `;
+      div.querySelector('.rm').addEventListener('click', ()=>{
+        f.excluded = !f.excluded;
+        renderThumbs();
+        updateExportEstimate();
+      });
+      thumbGrid.appendChild(div);
+    });
+    const kept = frames.filter(f=>!f.excluded).length;
+    previewSummary.textContent = `${frames.length}枚中 ${kept}枚を使用`;
+  }
+
+  function updateExportEstimate(){
+    const kept = frames.filter(f=>!f.excluded);
+    const outH = videoHeight * kept.length;
+    exportEstimate.innerHTML =
+      `使用フレーム: <b>${kept.length}枚</b> &nbsp;→&nbsp; 出力画像サイズ: <b>${videoWidth}×${outH}px</b>`;
+    exportBtn.disabled = kept.length === 0;
+  }
+
+  // ---- export ----
+  exportBtn.addEventListener('click', async ()=>{
+    const kept = frames.filter(f=>!f.excluded);
+    if(kept.length === 0) return;
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = videoWidth;
+    outCanvas.height = videoHeight * kept.length;
+    const octx = outCanvas.getContext('2d');
+
+    for(let i=0; i<kept.length; i++){
+      const img = await loadImage(kept[i].dataUrl);
+      octx.drawImage(img, 0, videoHeight * i, videoWidth, videoHeight);
+    }
+
+    outCanvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const base = (fileNameEl.textContent || 'particle').replace(/\.[^.]+$/, '');
+      a.href = url;
+      a.download = `${base}_strip_${kept.length}f.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 3000);
+    }, 'image/png');
+  });
+
+  function loadImage(src){
+    return new Promise(resolve=>{
+      const img = new Image();
+      img.onload = ()=>resolve(img);
+      img.src = src;
+    });
+  }
+})();
+</script>
+</body>
+</html>
