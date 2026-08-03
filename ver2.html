@@ -318,6 +318,11 @@
     </div>
   </div>
 
+  <div class="panel" id="debugPanel">
+    <h2>デバッグログ</h2>
+    <div id="debugLog" style="font-family:var(--mono); font-size:11.5px; color:var(--text-dim); white-space:pre-wrap; line-height:1.7; max-height:200px; overflow-y:auto; background:var(--panel-2); border-radius:8px; padding:10px;"></div>
+  </div>
+
   <footer>すべての処理はブラウザ内で完結します。動画はサーバーに送信されません。</footer>
 </div>
 
@@ -326,6 +331,20 @@
 
 <script>
 (function(){
+  const debugLogEl = document.getElementById('debugLog');
+  function log(msg){
+    const time = new Date().toLocaleTimeString('ja-JP', {hour12:false});
+    debugLogEl.textContent += `[${time}] ${msg}\n`;
+    debugLogEl.scrollTop = debugLogEl.scrollHeight;
+    console.log(msg);
+  }
+  window.addEventListener('error', e=>{
+    log('❌ エラー: ' + e.message + ' (' + e.filename + ':' + e.lineno + ')');
+  });
+  window.addEventListener('unhandledrejection', e=>{
+    log('❌ Promiseエラー: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+  log('ページ読み込み完了。動画を選択してください。');
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const fileNameEl = document.getElementById('fileName');
@@ -379,17 +398,25 @@
   });
 
   function loadFile(file){
+    log('ファイル選択: ' + file.name + ' (' + fmtBytes(file.size) + ', type=' + file.type + ')');
     if(!file.type.startsWith('video/')){
+      log('❌ 動画ファイルとして認識されませんでした (type=' + file.type + ')');
       alert('動画ファイルを選択してください。');
       return;
     }
     fileNameEl.textContent = file.name;
     const url = URL.createObjectURL(file);
+    log('Object URL 作成OK。メタデータ読み込み待機中...');
     video.src = url;
+    video.onerror = ()=>{
+      const err = video.error;
+      log('❌ 動画読み込みエラー: code=' + (err ? err.code : '不明') + ' message=' + (err ? err.message : ''));
+    };
     video.onloadedmetadata = ()=>{
       videoWidth = video.videoWidth;
       videoHeight = video.videoHeight;
       videoDuration = video.duration;
+      log(`メタデータ読み込み完了: ${videoWidth}×${videoHeight}px, 長さ${videoDuration.toFixed(2)}秒, readyState=${video.readyState}`);
       controlsPanel.style.display = 'block';
       previewPanel.style.display = 'none';
       exportPanel.style.display = 'none';
@@ -432,6 +459,7 @@
   // ---- extraction ----
   extractBtn.addEventListener('click', async ()=>{
     const {stamps} = computeTimestamps();
+    log('抽出開始。予定フレーム数=' + stamps.length);
     if(stamps.length === 0){
       alert('切り出せるフレームがありません。設定を見直してください。');
       return;
@@ -443,6 +471,7 @@
 
     // 動画データがまだ十分読み込まれていない場合は待つ
     if (video.readyState < 2) {
+      log('動画データ待機中... (readyState=' + video.readyState + ')');
       await new Promise(resolve=>{
         const onReady = ()=>{
           video.removeEventListener('loadeddata', onReady);
@@ -450,20 +479,29 @@
         };
         video.addEventListener('loadeddata', onReady);
       });
+      log('動画データ準備完了 (readyState=' + video.readyState + ')');
     }
 
     canvas.width = videoWidth;
     canvas.height = videoHeight;
     frames = [];
 
-    for(let i=0; i<stamps.length; i++){
-      await seekTo(stamps[i]);
-      ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
-      const dataUrl = canvas.toDataURL('image/png');
-      frames.push({dataUrl, excluded:false, time: stamps[i]});
-      progressBar.value = i+1;
+    try {
+      for(let i=0; i<stamps.length; i++){
+        await seekTo(stamps[i]);
+        ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+        const dataUrl = canvas.toDataURL('image/png');
+        frames.push({dataUrl, excluded:false, time: stamps[i]});
+        progressBar.value = i+1;
+        log(`フレーム ${i+1}/${stamps.length} 取得OK (t=${stamps[i].toFixed(2)}s)`);
+      }
+    } catch(e) {
+      log('❌ 抽出中にエラー: ' + e.message);
+      extractBtn.disabled = false;
+      return;
     }
 
+    log('抽出完了。全' + frames.length + '枚。');
     progressBar.style.display = 'none';
     extractBtn.disabled = false;
     renderThumbs();
@@ -532,29 +570,39 @@
   // ---- export ----
   exportBtn.addEventListener('click', async ()=>{
     const kept = frames.filter(f=>!f.excluded);
-    if(kept.length === 0) return;
+    log('書き出し開始。使用フレーム数=' + kept.length);
+    if (kept.length === 0) return;
 
-    const outCanvas = document.createElement('canvas');
-    outCanvas.width = videoWidth;
-    outCanvas.height = videoHeight * kept.length;
-    const octx = outCanvas.getContext('2d');
+    try {
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = videoWidth;
+      outCanvas.height = videoHeight * kept.length;
+      const octx = outCanvas.getContext('2d');
 
-    for(let i=0; i<kept.length; i++){
-      const img = await loadImage(kept[i].dataUrl);
-      octx.drawImage(img, 0, videoHeight * i, videoWidth, videoHeight);
+      for(let i=0; i<kept.length; i++){
+        const img = await loadImage(kept[i].dataUrl);
+        octx.drawImage(img, 0, videoHeight * i, videoWidth, videoHeight);
+      }
+
+      outCanvas.toBlob(blob=>{
+        if (!blob) {
+          log('❌ toBlobがnullを返しました(画像生成に失敗)');
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const base = (fileNameEl.textContent || 'particle').replace(/\.[^.]+$/, '');
+        a.href = url;
+        a.download = `${base}_strip_${kept.length}f.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        log('✅ ダウンロード実行: ' + a.download + ` (${outCanvas.width}×${outCanvas.height}px)`);
+        setTimeout(()=>URL.revokeObjectURL(url), 3000);
+      }, 'image/png');
+    } catch(e) {
+      log('❌ 書き出し中にエラー: ' + e.message);
     }
-
-    outCanvas.toBlob(blob=>{
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const base = (fileNameEl.textContent || 'particle').replace(/\.[^.]+$/, '');
-      a.href = url;
-      a.download = `${base}_strip_${kept.length}f.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 3000);
-    }, 'image/png');
   });
 
   function loadImage(src){
