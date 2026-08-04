@@ -469,16 +469,30 @@
     progressBar.max = stamps.length;
     progressBar.value = 0;
 
-    // 動画データがまだ十分読み込まれていない場合は待つ
+    // 動画データがまだ十分読み込まれていない場合は待つ(タイムアウト付き)
     if (video.readyState < 2) {
       log('動画データ待機中... (readyState=' + video.readyState + ')');
-      await new Promise(resolve=>{
+      const dataReady = await new Promise(resolve=>{
         const onReady = ()=>{
           video.removeEventListener('loadeddata', onReady);
-          resolve();
+          clearTimeout(timer);
+          resolve(true);
         };
         video.addEventListener('loadeddata', onReady);
+        const timer = setTimeout(()=>{
+          video.removeEventListener('loadeddata', onReady);
+          resolve(false);
+        }, 8000);
       });
+      if (!dataReady) {
+        log('❌ 動画データの読み込みがタイムアウトしました (readyState=' + video.readyState + ')');
+        log('⚠ この動画のコーデックがブラウザでデコードできない可能性があります。');
+        log('⚠ 特にiPhoneで撮影した .mov(HEVC/H.265)形式はChromeで再生できない場合があります。');
+        alert('動画データを読み込めませんでした。\n\nこの動画の形式(コーデック)がブラウザで対応していない可能性があります。特にiPhoneで撮影した.mov(HEVC)形式でよく起こります。\n\n動画編集アプリやオンライン変換サービスでMP4(H.264)形式に変換してから、もう一度お試しください。');
+        extractBtn.disabled = false;
+        progressBar.style.display = 'none';
+        return;
+      }
       log('動画データ準備完了 (readyState=' + video.readyState + ')');
     }
 
