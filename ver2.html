@@ -289,6 +289,59 @@
     margin-bottom:16px;
   }
   .hint{font-size:12px;color:var(--text-dim);}
+
+  .ver-badge{
+    display:inline-block;
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:600;
+    color:var(--accent);
+    background:#1c2b28;
+    border:1px solid var(--accent);
+    border-radius:6px;
+    padding:2px 8px;
+    vertical-align:middle;
+    margin-left:8px;
+  }
+
+  /* changelog */
+  #changelogPanel summary{
+    cursor:pointer;
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--text-dim);
+    font-weight:600;
+    list-style:none;
+  }
+  #changelogPanel summary::-webkit-details-marker{ display:none; }
+  #changelogPanel summary::before{
+    content:"▸ ";
+    color:var(--accent);
+  }
+  #changelogPanel[open] summary::before{
+    content:"▾ ";
+  }
+  .changelog-entry{
+    margin-top:16px;
+    padding-top:14px;
+    border-top:1px solid var(--line);
+  }
+  .changelog-entry:first-of-type{ border-top:none; margin-top:14px; padding-top:0; }
+  .changelog-entry .cv{
+    font-family:var(--mono);
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--accent);
+    margin-bottom:6px;
+  }
+  .changelog-entry ul{
+    margin:0;
+    padding-left:18px;
+    font-size:13px;
+    color:var(--text-dim);
+    line-height:1.7;
+  }
 </style>
 </head>
 <body>
@@ -296,7 +349,7 @@
 
   <header>
     <div class="eyebrow">Minecraft Add-On Tool</div>
-    <h1>パーティクルストリップメーカー</h1>
+    <h1>パーティクルストリップメーカー <span class="ver-badge">ver3</span></h1>
     <p>動画から一定間隔でフレームを切り出し、縦1列に結合したPNGを書き出します。マイクラのパーティクルテクスチャ(アニメーション)にそのまま使えます。</p>
   </header>
 
@@ -322,10 +375,15 @@
         <label for="startInput">開始位置(秒)</label>
         <input type="number" id="startInput" value="0" min="0" step="0.01">
       </div>
+      <div class="field">
+        <label for="outputWidthInput">出力フレーム幅(px、空欄で元サイズ)</label>
+        <input type="number" id="outputWidthInput" placeholder="例: 64" min="1" step="1">
+      </div>
       <button id="extractBtn" class="primary">フレームを切り出す</button>
     </div>
 
     <div class="estimate" id="estimate"></div>
+    <div class="hint" id="canvasWarning" style="margin-top:8px;"></div>
     <progress id="progressBar" value="0" max="1" style="display:none;"></progress>
   </div>
 
@@ -359,6 +417,42 @@
     <div id="debugLog" style="font-family:var(--mono); font-size:11.5px; color:var(--text-dim); white-space:pre-wrap; line-height:1.7; max-height:200px; overflow-y:auto; background:var(--panel-2); border-radius:8px; padding:10px;"></div>
   </div>
 
+  <div class="panel">
+    <details id="changelogPanel">
+      <summary>更新履歴</summary>
+
+      <div class="changelog-entry">
+        <div class="cv">ver3</div>
+        <ul>
+          <li>「切り出し間隔(秒)」を「FPS」指定に変更</li>
+          <li>書き出し後にSnowStorm用パラメータ(Texture Size / UV Start / UV Size / UV Step / Max Frame / FPS)を自動計算して表示</li>
+          <li>「出力フレーム幅」指定でサイズを縮小できるオプションを追加</li>
+          <li>出力画像がブラウザのCanvas上限(高さ約16,384px)を超える場合に警告し、書き出しボタンを無効化するよう修正</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cv">ver2</div>
+        <ul>
+          <li>デバッグログ表示欄を追加(動画読み込み・抽出・書き出しの各段階をリアルタイム表示)</li>
+          <li>動画データの読み込みに8秒のタイムアウトを追加し、非対応コーデック(iPhoneの.mov/HEVC等)の場合に分かりやすいエラーメッセージを表示するよう修正</li>
+          <li>フレームseek処理の不具合(先頭フレームで止まる問題)を修正</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cv">ver1</div>
+        <ul>
+          <li>動画のドラッグ&ドロップ読み込み</li>
+          <li>切り出し間隔(秒)・開始位置の指定</li>
+          <li>フレームのプレビュー表示と個別除外機能</li>
+          <li>出力サイズの事前計算表示</li>
+          <li>縦1列に結合したPNGの書き出し</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+
   <footer>すべての処理はブラウザ内で完結します。動画はサーバーに送信されません。</footer>
 </div>
 
@@ -387,6 +481,8 @@
   const controlsPanel = document.getElementById('controlsPanel');
   const fpsInput = document.getElementById('fpsInput');
   const startInput = document.getElementById('startInput');
+  const outputWidthInput = document.getElementById('outputWidthInput');
+  const canvasWarningEl = document.getElementById('canvasWarning');
   const extractBtn = document.getElementById('extractBtn');
   const estimateEl = document.getElementById('estimate');
   const progressBar = document.getElementById('progressBar');
@@ -405,6 +501,17 @@
 
   let videoWidth = 0, videoHeight = 0, videoDuration = 0;
   let usedFps = 10; // 抽出時に使用したFPS(SnowStorm設定表示用)
+  // 主要ブラウザで安全に生成できるcanvasの最大高さ(保守的な値)
+  const MAX_CANVAS_DIM = 16384;
+
+  function getOutputFrameSize(){
+    const w = parseInt(outputWidthInput.value, 10);
+    if (!w || w <= 0 || !videoWidth) {
+      return { w: videoWidth, h: videoHeight };
+    }
+    const scale = w / videoWidth;
+    return { w, h: Math.max(1, Math.round(videoHeight * scale)) };
+  }
   // frames: [{dataUrl, excluded}]
   let frames = [];
 
@@ -469,6 +576,10 @@
 
   fpsInput.addEventListener('input', updateEstimate);
   startInput.addEventListener('input', updateEstimate);
+  outputWidthInput.addEventListener('input', ()=>{
+    updateEstimate();
+    if (frames.length) updateExportEstimate();
+  });
 
   function computeTimestamps(){
     const fps = Math.max(parseFloat(fpsInput.value) || 10, 0.1);
@@ -485,7 +596,8 @@
     if(!videoDuration) return;
     const {stamps} = computeTimestamps();
     const count = stamps.length;
-    const outH = videoHeight * count;
+    const {w: outW, h: frameH} = getOutputFrameSize();
+    const outH = frameH * count;
     let warn = '';
     if(count > 128){
       warn = ' <span class="warn">⚠ フレーム数が多いです。マイクラのパーティクルテクスチャとしては重くなる可能性があります。</span>';
@@ -495,7 +607,13 @@
     estimateEl.innerHTML =
       `動画: <b>${videoWidth}×${videoHeight}px</b> / 長さ <b>${videoDuration.toFixed(2)}s</b>` +
       ` &nbsp;→&nbsp; 切り出し予定 <b>${count}枚</b>` +
-      ` &nbsp;→&nbsp; 出力サイズ予測 <b>${videoWidth}×${outH}px</b>${warn}`;
+      ` &nbsp;→&nbsp; 出力サイズ予測 <b>${outW}×${outH}px</b>${warn}`;
+
+    if (outH > MAX_CANVAS_DIM) {
+      canvasWarningEl.innerHTML = `<span class="warn">⚠ 出力の高さ(${outH}px)がブラウザで生成できる上限(約${MAX_CANVAS_DIM}px)を超えています。FPSを下げる、開始・終了範囲を絞る、または「出力フレーム幅」を小さく指定してください。</span>`;
+    } else {
+      canvasWarningEl.textContent = '';
+    }
   }
 
   // ---- extraction ----
@@ -618,32 +736,46 @@
 
   function updateExportEstimate(){
     const kept = frames.filter(f=>!f.excluded);
-    const outH = videoHeight * kept.length;
+    const {w: outW, h: frameH} = getOutputFrameSize();
+    const outH = frameH * kept.length;
+    let extra = '';
+    if (outH > MAX_CANVAS_DIM) {
+      extra = ` <span class="warn">⚠ ブラウザの上限(約${MAX_CANVAS_DIM}px)を超えるため書き出せません。「出力フレーム幅」を小さくするか、フレーム数を減らしてください。</span>`;
+    }
     exportEstimate.innerHTML =
-      `使用フレーム: <b>${kept.length}枚</b> &nbsp;→&nbsp; 出力画像サイズ: <b>${videoWidth}×${outH}px</b>`;
-    exportBtn.disabled = kept.length === 0;
+      `使用フレーム: <b>${kept.length}枚</b> &nbsp;→&nbsp; 出力画像サイズ: <b>${outW}×${outH}px</b>${extra}`;
+    exportBtn.disabled = kept.length === 0 || outH > MAX_CANVAS_DIM;
   }
 
   // ---- export ----
   exportBtn.addEventListener('click', async ()=>{
     const kept = frames.filter(f=>!f.excluded);
-    log('書き出し開始。使用フレーム数=' + kept.length);
+    const {w: outW, h: frameH} = getOutputFrameSize();
+    log(`書き出し開始。使用フレーム数=${kept.length} / 出力フレームサイズ=${outW}×${frameH}`);
     if (kept.length === 0) return;
+
+    const totalH = frameH * kept.length;
+    if (totalH > MAX_CANVAS_DIM) {
+      log(`❌ 出力の高さ(${totalH}px)が上限(${MAX_CANVAS_DIM}px)を超えているため中止しました。`);
+      alert(`出力画像の高さ(${totalH}px)がブラウザで生成できる上限(約${MAX_CANVAS_DIM}px)を超えています。\n\n「出力フレーム幅」を小さく指定するか、FPSを下げる、範囲を絞るなどしてフレーム数を減らしてください。`);
+      return;
+    }
 
     try {
       const outCanvas = document.createElement('canvas');
-      outCanvas.width = videoWidth;
-      outCanvas.height = videoHeight * kept.length;
+      outCanvas.width = outW;
+      outCanvas.height = totalH;
       const octx = outCanvas.getContext('2d');
 
       for(let i=0; i<kept.length; i++){
         const img = await loadImage(kept[i].dataUrl);
-        octx.drawImage(img, 0, videoHeight * i, videoWidth, videoHeight);
+        octx.drawImage(img, 0, frameH * i, outW, frameH);
       }
 
       outCanvas.toBlob(blob=>{
         if (!blob) {
           log('❌ toBlobがnullを返しました(画像生成に失敗)');
+          alert('画像の生成に失敗しました。出力サイズが大きすぎる可能性があります。「出力フレーム幅」を小さくして再度お試しください。');
           return;
         }
         const url = URL.createObjectURL(blob);
@@ -655,7 +787,7 @@
         a.click();
         a.remove();
         log('✅ ダウンロード実行: ' + a.download + ` (${outCanvas.width}×${outCanvas.height}px)`);
-        renderSnowstormParams(videoWidth, videoHeight, kept.length, usedFps);
+        renderSnowstormParams(outW, frameH, kept.length, usedFps);
         setTimeout(()=>URL.revokeObjectURL(url), 3000);
       }, 'image/png');
     } catch(e) {
