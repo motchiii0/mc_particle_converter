@@ -245,6 +245,33 @@
     text-align:center;
   }
 
+  /* SnowStorm param cards */
+  .param-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap:12px;
+  }
+  .param-card{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 14px;
+  }
+  .param-card .k{
+    font-size:11px;
+    color:var(--text-dim);
+    font-family:var(--mono);
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    margin-bottom:6px;
+  }
+  .param-card .v{
+    font-size:16px;
+    font-family:var(--mono);
+    font-weight:700;
+    color:var(--accent);
+  }
+
   footer{
     text-align:center;
     color:var(--text-dim);
@@ -288,8 +315,8 @@
     <h2>2. 切り出し設定</h2>
     <div class="controls">
       <div class="field">
-        <label for="intervalInput">切り出し間隔(秒)</label>
-        <input type="number" id="intervalInput" value="0.5" min="0.01" step="0.01">
+        <label for="fpsInput">FPS(1秒あたりのフレーム数)</label>
+        <input type="number" id="fpsInput" value="10" min="0.1" step="0.1">
       </div>
       <div class="field">
         <label for="startInput">開始位置(秒)</label>
@@ -316,6 +343,15 @@
     <div style="margin-top:16px;">
       <button id="exportBtn" class="primary">縦1列PNGをダウンロード</button>
     </div>
+  </div>
+
+  <div class="panel" id="snowstormPanel" style="display:none;">
+    <div class="row-actions">
+      <h2 style="margin:0;">5. SnowStorm用パラメータ</h2>
+      <button id="copySnowstormBtn" style="padding:6px 12px; font-size:12px;">値をコピー</button>
+    </div>
+    <p class="hint" style="margin:0 0 14px;">SnowStorm(<a href="https://jason-boyd.dev/particle-editor/" target="_blank" rel="noopener" style="color:var(--accent);">particle-editor</a>)のflipbook設定にそのまま入力してください。</p>
+    <div class="param-grid" id="snowstormGrid"></div>
   </div>
 
   <div class="panel" id="debugPanel">
@@ -349,7 +385,7 @@
   const fileInput = document.getElementById('fileInput');
   const fileNameEl = document.getElementById('fileName');
   const controlsPanel = document.getElementById('controlsPanel');
-  const intervalInput = document.getElementById('intervalInput');
+  const fpsInput = document.getElementById('fpsInput');
   const startInput = document.getElementById('startInput');
   const extractBtn = document.getElementById('extractBtn');
   const estimateEl = document.getElementById('estimate');
@@ -360,11 +396,15 @@
   const exportPanel = document.getElementById('exportPanel');
   const exportEstimate = document.getElementById('exportEstimate');
   const exportBtn = document.getElementById('exportBtn');
+  const snowstormPanel = document.getElementById('snowstormPanel');
+  const snowstormGrid = document.getElementById('snowstormGrid');
+  const copySnowstormBtn = document.getElementById('copySnowstormBtn');
   const video = document.getElementById('hiddenVideo');
   const canvas = document.getElementById('workCanvas');
   const ctx = canvas.getContext('2d');
 
   let videoWidth = 0, videoHeight = 0, videoDuration = 0;
+  let usedFps = 10; // 抽出時に使用したFPS(SnowStorm設定表示用)
   // frames: [{dataUrl, excluded}]
   let frames = [];
 
@@ -420,23 +460,25 @@
       controlsPanel.style.display = 'block';
       previewPanel.style.display = 'none';
       exportPanel.style.display = 'none';
+      snowstormPanel.style.display = 'none';
       frames = [];
       thumbGrid.innerHTML = '';
       updateEstimate();
     };
   }
 
-  intervalInput.addEventListener('input', updateEstimate);
+  fpsInput.addEventListener('input', updateEstimate);
   startInput.addEventListener('input', updateEstimate);
 
   function computeTimestamps(){
-    const interval = Math.max(parseFloat(intervalInput.value) || 0.5, 0.01);
+    const fps = Math.max(parseFloat(fpsInput.value) || 10, 0.1);
+    const interval = 1 / fps;
     const start = Math.max(parseFloat(startInput.value) || 0, 0);
     const stamps = [];
     for(let t = start; t < videoDuration; t += interval){
       stamps.push(t);
     }
-    return {stamps, interval, start};
+    return {stamps, interval, start, fps};
   }
 
   function updateEstimate(){
@@ -458,8 +500,9 @@
 
   // ---- extraction ----
   extractBtn.addEventListener('click', async ()=>{
-    const {stamps} = computeTimestamps();
-    log('抽出開始。予定フレーム数=' + stamps.length);
+    const {stamps, fps} = computeTimestamps();
+    usedFps = fps;
+    log('抽出開始。予定フレーム数=' + stamps.length + ' / FPS=' + fps);
     if(stamps.length === 0){
       alert('切り出せるフレームがありません。設定を見直してください。');
       return;
@@ -612,10 +655,49 @@
         a.click();
         a.remove();
         log('✅ ダウンロード実行: ' + a.download + ` (${outCanvas.width}×${outCanvas.height}px)`);
+        renderSnowstormParams(videoWidth, videoHeight, kept.length, usedFps);
         setTimeout(()=>URL.revokeObjectURL(url), 3000);
       }, 'image/png');
     } catch(e) {
       log('❌ 書き出し中にエラー: ' + e.message);
+    }
+  });
+
+  // ---- SnowStorm params ----
+  let lastSnowstormParams = null;
+
+  function renderSnowstormParams(frameW, frameH, frameCount, fps){
+    const textureW = frameW;
+    const textureH = frameH * frameCount;
+    const params = [
+      { k: 'Texture Size', v: `${textureW}, ${textureH}` },
+      { k: 'UV Start', v: `0, 0` },
+      { k: 'UV Size', v: `${frameW}, ${frameH}` },
+      { k: 'UV Step', v: `0, ${frameH}` },
+      { k: 'Max Frame', v: `${frameCount}` },
+      { k: 'FPS', v: `${fps}` },
+    ];
+    lastSnowstormParams = params;
+    snowstormGrid.innerHTML = params.map(p => `
+      <div class="param-card">
+        <div class="k">${p.k}</div>
+        <div class="v">${p.v}</div>
+      </div>
+    `).join('');
+    snowstormPanel.style.display = 'block';
+    log('SnowStormパラメータ計算完了: ' + params.map(p=>`${p.k}=${p.v}`).join(' / '));
+  }
+
+  copySnowstormBtn.addEventListener('click', async ()=>{
+    if (!lastSnowstormParams) return;
+    const text = lastSnowstormParams.map(p => `${p.k}: ${p.v}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      copySnowstormBtn.textContent = 'コピーしました✓';
+      setTimeout(()=> copySnowstormBtn.textContent = '値をコピー', 1500);
+    } catch(e) {
+      log('❌ クリップボードコピー失敗: ' + e.message);
+      alert(text);
     }
   });
 
